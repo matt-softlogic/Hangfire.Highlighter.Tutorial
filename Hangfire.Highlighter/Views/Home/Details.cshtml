@@ -16,4 +16,15 @@
     <div class="clearfix"></div>
 </div>
 
-<div>@Html.Raw(Model.HighlightedCode)</div>
+<div>
+    <div id="sourceCode" data-snippet="@Model.Id" data-subscribe="@(Model.HighlightedCode == null)">
+        @if (Model.HighlightedCode == null)
+        {
+            <img src="~/Content/ajax-loader.gif" />
+        }
+        else
+        {
+            @Html.Raw(Model.HighlightedCode)
+        }
+    </div>
+</div>

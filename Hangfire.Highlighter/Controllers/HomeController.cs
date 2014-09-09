@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Web;
 using System.Web.Mvc;
 using Hangfire.Highlighter.Models;
+using Microsoft.AspNet.SignalR;
 
 namespace Hangfire.Highlighter.Controllers
 {
@@ -35,16 +36,14 @@ namespace Hangfire.Highlighter.Controllers
             if (ModelState.IsValid)
             {
                 snippet.CreatedAt = DateTime.UtcNow;
-
-                using (StackExchange.Profiling.MiniProfiler.StepStatic("Service Call"))
-                {
-                    snippet.HighlightedCode = HighlightSource(snippet.SourceCode);
-                    snippet.HighlightedAt = DateTime.UtcNow;
-                }
-
                 _db.CodeSnippets.Add(snippet);
                 _db.SaveChanges();
 
+                using (StackExchange.Profiling.MiniProfiler.StepStatic("Job enqueue"))
+                {
+                    BackgroundJob.Enqueue(() => HighlightSnippet(snippet.Id));
+                }
+                
                 return RedirectToAction("Details", new {id = snippet.Id});
             }
 
@@ -106,6 +105,26 @@ namespace Hangfire.Highlighter.Controllers
         {
             return Task.Run<Task<TResult>>(func).Unwrap().GetAwaiter().GetResult();
         }
+
+        //Process a Job
+        public static void HighlightSnippet(int snippetId)
+        {
+            using (var db = new HighlighterDbContext())
+            {
+                var snippet = db.CodeSnippets.Find(snippetId);
+                if (snippet == null) return;
+
+                snippet.HighlightedCode = HighlightSource(snippet.SourceCode);
+                snippet.HighlightedAt = DateTime.UtcNow;
+
+                db.SaveChanges();
+
+                var hubContext = GlobalHost.ConnectionManager.GetHubContext<SnippetHub>();
+                hubContext.Clients.Group(SnippetHub.GetGroup(snippet.Id)).highlight(snippet.HighlightedCode);
+
+            }
+        }
+
 
     }
 }
